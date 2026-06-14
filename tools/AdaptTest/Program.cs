@@ -7,41 +7,127 @@ internal static class Program
     private const string DefaultPdf =
         @"c:\Users\User\Downloads\Telegram Desktop\В2_КОД 09.02.07-2-2026-БУ (2).pdf";
 
-    private static readonly string ProjectRoot =
-        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", ".."));
-
-    private static readonly string CoachRoot =
+    private static readonly string DefaultCoachRoot =
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+
+    private static readonly string DefaultProjectRoot =
+        Path.GetFullPath(Path.Combine(DefaultCoachRoot, ".."));
 
     public static int Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
 
         if (args.Contains("--test-surgery", StringComparer.OrdinalIgnoreCase))
-            return RunSurgeryTests();
+            return RunSurgeryTests(ResolveCoachRoot(args));
 
-        var pdfPath = args.FirstOrDefault(a => !a.StartsWith('-')) ?? DefaultPdf;
+        var tzPath = args.FirstOrDefault(a => !a.StartsWith('-') && !a.Contains('=')) ?? DefaultPdf;
         var apply = args.Contains("--apply", StringComparer.OrdinalIgnoreCase);
+        var coachRoot = ResolveCoachRoot(args);
+        var projectRoot = ResolveProjectRoot(args, coachRoot);
 
         if (apply)
         {
-            if (!File.Exists(pdfPath))
+            if (!File.Exists(tzPath))
             {
-                Console.Error.WriteLine("PDF не найден: " + pdfPath);
+                Console.Error.WriteLine("ТЗ не найдено: " + tzPath);
                 return 1;
             }
 
-            Console.WriteLine($"PDF: {pdfPath}");
-            Console.WriteLine($"Проект: {ProjectRoot}");
-            var count = ApplyAdaptedProject.Apply(pdfPath, ProjectRoot, CoachRoot);
+            if (!IsMvcProject(projectRoot))
+            {
+                Console.Error.WriteLine("MVC-проект не найден: " + projectRoot);
+                Console.Error.WriteLine("Укажите --project-root=\"C:\\path\\to\\KodShopWeb\" или запускайте из папки проекта.");
+                return 1;
+            }
+
+            Console.WriteLine($"ТЗ: {tzPath}");
+            Console.WriteLine($"Проект: {projectRoot}");
+            Console.WriteLine($"ExamCoach: {coachRoot}");
+            var count = ApplyAdaptedProject.Apply(tzPath, projectRoot, coachRoot);
             Console.WriteLine($"Записано файлов: {count}");
             return 0;
         }
 
-        return RunChecks(pdfPath);
+        return RunChecks(tzPath, coachRoot);
     }
 
-    private static int RunSurgeryTests()
+    private static string ResolveCoachRoot(string[] args)
+    {
+        var explicitPath = GetArgValue(args, "--coach-root");
+        if (!string.IsNullOrWhiteSpace(explicitPath))
+            return Path.GetFullPath(explicitPath);
+
+        if (File.Exists(Path.Combine(DefaultCoachRoot, "steps-data.json")))
+            return DefaultCoachRoot;
+
+        var fromCwd = FindCoachRoot(Environment.CurrentDirectory);
+        return fromCwd ?? DefaultCoachRoot;
+    }
+
+    private static string ResolveProjectRoot(string[] args, string coachRoot)
+    {
+        var explicitPath = GetArgValue(args, "--project-root");
+        if (!string.IsNullOrWhiteSpace(explicitPath))
+            return Path.GetFullPath(explicitPath);
+
+        var fromCwd = FindMvcProjectRoot(Environment.CurrentDirectory);
+        if (fromCwd != null)
+            return fromCwd;
+
+        var sibling = Path.GetFullPath(Path.Combine(coachRoot, ".."));
+        if (IsMvcProject(sibling))
+            return sibling;
+
+        if (IsMvcProject(DefaultProjectRoot))
+            return DefaultProjectRoot;
+
+        return DefaultProjectRoot;
+    }
+
+    private static string? GetArgValue(string[] args, string name)
+    {
+        var prefix = name + "=";
+        var match = args.FirstOrDefault(a =>
+            a.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        return match?[prefix.Length..];
+    }
+
+    private static string? FindCoachRoot(string start)
+    {
+        var dir = start;
+        while (!string.IsNullOrEmpty(dir))
+        {
+            if (File.Exists(Path.Combine(dir, "steps-data.json")) &&
+                Directory.Exists(Path.Combine(dir, "Desktop")))
+                return dir;
+            dir = Path.GetDirectoryName(dir)!;
+        }
+
+        return null;
+    }
+
+    private static string? FindMvcProjectRoot(string start)
+    {
+        var dir = start;
+        while (!string.IsNullOrEmpty(dir))
+        {
+            if (IsMvcProject(dir))
+                return dir;
+            dir = Path.GetDirectoryName(dir)!;
+        }
+
+        return null;
+    }
+
+    private static bool IsMvcProject(string path) =>
+        Directory.Exists(Path.Combine(path, "Controllers")) &&
+        Directory.Exists(Path.Combine(path, "Models")) &&
+        Directory.Exists(Path.Combine(path, "Views")) &&
+        Directory.EnumerateFiles(path, "*.csproj").Any(p =>
+            !p.Contains("ExamCoach", StringComparison.OrdinalIgnoreCase) &&
+            !p.Contains("AdaptTest", StringComparison.OrdinalIgnoreCase));
+
+    private static int RunSurgeryTests(string coachRoot)
     {
         var sample = """
             public Task<List<PickupPoint>> GetPickupPointsAsync() =>
@@ -104,14 +190,14 @@ internal static class Program
         Console.WriteLine(ok ? "✓ RemoveMarkedSection: убирает блок заказа и сохраняет SaveChanges" : "✗ RemoveMarkedSection удалил лишний код в DbSeeder");
         if (!ok) return 1;
 
-        ok = RunCrossFileSyncTest();
+        ok = RunCrossFileSyncTest(coachRoot);
         Console.WriteLine(ok ? "✓ CrossFileSync: контроллер согласован с Entities" : "✗ CrossFileSync не синхронизировал OrdersController");
         return ok ? 0 : 1;
     }
 
-    private static bool RunCrossFileSyncTest()
+    private static bool RunCrossFileSyncTest(string coachRoot)
     {
-        var basePath = Path.Combine(CoachRoot, "steps-data.json");
+        var basePath = Path.Combine(coachRoot, "steps-data.json");
         var data = CoachLoader.Load(basePath);
         var profile = new AssignmentProfile
         {
@@ -152,15 +238,15 @@ internal static class Program
         return entitiesOk && controllerOk && serviceOk && vmOk && profile.IntegrityIssues.Count == 0;
     }
 
-    private static int RunChecks(string pdfPath)
+    private static int RunChecks(string tzPath, string coachRoot)
     {
-        var basePath = Path.Combine(CoachRoot, "steps-data.json");
-        var text = AssignmentDocumentReader.ReadFile(pdfPath);
+        var basePath = Path.Combine(coachRoot, "steps-data.json");
+        var text = AssignmentDocumentReader.ReadFile(tzPath);
         var profile = AssignmentTextParser.Parse(text);
         var adapted = AssignmentAdaptEngine.Adapt(CoachLoader.Load(basePath), profile);
         var req = profile.Requirements!;
 
-        Console.WriteLine($"=== {Path.GetFileName(pdfPath)} — сверка с кодом ExamCoach ===\n");
+        Console.WriteLine($"=== {Path.GetFileName(tzPath)} — сверка с кодом ExamCoach ===\n");
         Console.WriteLine($"Распознано: тип={profile.AssignmentKind ?? "—"}, вариант={profile.ExamVariant ?? "—"}");
         Console.WriteLine($"Функции: [{string.Join(", ", req.Features.OrderBy(f => f))}]");
         if (req.SeedData != null)
