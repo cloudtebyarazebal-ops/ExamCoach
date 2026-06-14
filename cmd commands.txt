@@ -1,0 +1,7 @@
+cd /d "C:\Users\User\Desktop\KodShopWeb" && dotnet run --project "ExamCoach\tools\AdaptTest\AdaptTest.csproj" -- "C:\Users\User\Downloads\Telegram Desktop\Новый текстовый документ (4).txt" --apply
+cd /d "C:\Users\User\Desktop\KodShopWeb" && dotnet build && dotnet run
+
+cd /d "C:\Users\User\Desktop\KodShopWeb" && dotnet run --project "ExamCoach\tools\AdaptTest\AdaptTest.csproj" -- "C:\Users\User\Downloads\Telegram Desktop\Новый текстовый документ (3).txt" --apply
+
+
+cd /d "C:\Users\User\Desktop\KodShopWeb" && dotnet run --project "ExamCoach\tools\AdaptTest\AdaptTest.csproj" -- "C:\Users\User\Downloads\Telegram Desktop\Новый текстовый документ (2).txt" --apply
