@@ -28,19 +28,36 @@ powershell -ExecutionPolicy Bypass -File .\Generate-ExamCoach.ps1
 
 ### 3. Адаптация проекта под ТЗ (AdaptTest)
 
-Сверка без изменений:
+**Рекомендуемая структура** (ExamCoach внутри MVC-проекта):
 
-```cmd
-dotnet run --project tools\AdaptTest\AdaptTest.csproj -- "C:\path\to\tz.txt"
+```
+KodShopWeb/
+  ExamCoach/        ← этот репозиторий
+  apply-tz.cmd      ← в репозитории KodShopWeb
 ```
 
-Применить к проекту (закройте запущенное приложение перед `--apply`):
+Сверка:
 
 ```cmd
-cd /d "C:\path\to\YourMvcProject"
-dotnet run --project "C:\path\to\ExamCoach\tools\AdaptTest\AdaptTest.csproj" -- "C:\path\to\tz.txt" --apply
-dotnet build && dotnet run
+cd KodShopWeb
+check-tz.cmd "C:\path\to\tz.txt"
 ```
+
+Применить (закройте запущенное приложение):
+
+```cmd
+cd KodShopWeb
+apply-tz.cmd "C:\path\to\tz.txt"
+```
+
+Или вручную:
+
+```cmd
+cd KodShopWeb
+dotnet run --project ExamCoach\tools\AdaptTest\AdaptTest.csproj -- "C:\path\to\tz.txt" --apply
+```
+
+AdaptTest сам находит KodShopWeb (по `Controllers/`, `Models/`, `Views/`) даже если ExamCoach лежит отдельно — можно указать `--project-root="C:\path\to\KodShopWeb"`.
 
 AdaptTest:
 
