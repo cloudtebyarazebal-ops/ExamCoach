@@ -1,0 +1,3 @@
+git clone https://github.com/cloudtebyarazebal-ops/democloudbtw.git KodShopWeb
+cd KodShopWeb
+powershell -ExecutionPolicy Bypass -File .\setup-workspace.ps1
