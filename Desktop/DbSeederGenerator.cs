@@ -5,7 +5,7 @@ namespace ExamCoachDesktop;
 /// <summary>Генерирует DbSeeder.cs из данных, извлечённых из ТЗ.</summary>
 public static class DbSeederGenerator
 {
-    public static string Generate(AssignmentSeedData seed, string signature)
+    public static string Generate(AssignmentSeedData seed, string signature, string rootNamespace = ProjectTargetHelper.ReferenceRootNamespace)
     {
         var makerType = seed.UseAuthorField ? "Author" : "Manufacturer";
         var makerSet = seed.UseAuthorField ? "Authors" : "Manufacturers";
@@ -16,10 +16,10 @@ public static class DbSeederGenerator
             : $"{seed.DomainLabel} + Manufacturer";
 
         var sb = new StringBuilder();
-        sb.AppendLine("using KodShopWeb.Models;");
+        sb.AppendLine($"using {rootNamespace}.Models;");
         sb.AppendLine("using Microsoft.EntityFrameworkCore;");
         sb.AppendLine();
-        sb.AppendLine("namespace KodShopWeb.Data;");
+        sb.AppendLine($"namespace {rootNamespace}.Data;");
         sb.AppendLine();
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// Заполняет базу данных демонстрационными данными ({domainComment}).");

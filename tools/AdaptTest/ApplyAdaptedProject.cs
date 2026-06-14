@@ -9,10 +9,13 @@ public static class ApplyAdaptedProject
     private static readonly string[] FileExtensions =
         [".cs", ".cshtml", ".json", ".js", ".css", ".csproj", ".html", ".txt"];
 
-    public static int Apply(string pdfPath, string projectRoot, string coachRoot)
+    public static int Apply(string pdfPath, string projectRoot, string coachRoot, bool initIfEmpty = false)
     {
         var basePath = Path.Combine(coachRoot, "steps-data.json");
         var desktopApp = Path.Combine(coachRoot, "DesktopApp");
+
+        if (initIfEmpty && !ProjectTargetHelper.IsWebProject(projectRoot))
+            ProjectTargetHelper.InitMvcProject(projectRoot);
 
         var text = AssignmentDocumentReader.ReadFile(pdfPath);
         var profile = AssignmentTextParser.Parse(text);
@@ -27,6 +30,18 @@ public static class ApplyAdaptedProject
             Encoding.UTF8);
         CoachDataSerializer.Save(adapted, Path.Combine(desktopApp, "steps-data-custom.json"));
 
+        var rootNamespace = ProjectTargetHelper.GetRootNamespace(projectRoot);
+        var scaffoldMode = !ProjectTargetHelper.IsScaffoldedProject(projectRoot);
+        if (scaffoldMode)
+        {
+            var relativePaths = adapted.Steps
+                .Where(s => LooksLikeProjectFile(s.Title))
+                .Select(s => s.Title);
+            ProjectTargetHelper.EnsureFolderStructure(projectRoot, relativePaths);
+            Console.WriteLine($"Режим: заполнение {(initIfEmpty ? "нового" : "пустого")} проекта (namespace: {rootNamespace})");
+        }
+
+        string? csprojTemplate = null;
         var written = 0;
         foreach (var step in adapted.Steps)
         {
@@ -35,29 +50,41 @@ public static class ApplyAdaptedProject
             if (!LooksLikeProjectFile(step.Title))
                 continue;
 
-            var relative = step.Title.Replace('/', Path.DirectorySeparatorChar);
+            var relative = ProjectTargetHelper.ResolveRelativePath(step.Title, projectRoot);
+            if (relative.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+            {
+                csprojTemplate ??= step.Code;
+                continue;
+            }
+
             var fullPath = Path.Combine(projectRoot, relative);
             var dir = Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
 
-            var sanitizedCode = SanitizeGeneratedCode(relative, step.Code, profile.ExamVariant, fullPath);
+            var code = ProjectTargetHelper.RewriteRootNamespace(step.Code, rootNamespace);
+            var sanitizedCode = SanitizeGeneratedCode(relative, code, profile.ExamVariant, fullPath, rootNamespace);
             File.WriteAllText(fullPath, sanitizedCode, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             written++;
         }
+
+        ProjectTargetHelper.EnsureNuGetPackages(projectRoot, csprojTemplate);
+        ProjectTargetHelper.EnsureExamCoachExcluded(projectRoot);
 
         var seed = profile.Requirements?.SeedData
             ?? AssignmentSeedExtractor.Extract(text, profile.Requirements ?? new AssignmentRequirements());
         var authorMode = seed.UseAuthorField;
 
+        if (scaffoldMode)
+            ProjectTargetHelper.CleanupDefaultMvcTemplate(projectRoot);
+
         NormalizeDomainConsistency(projectRoot, authorMode);
-        RewriteEntities(projectRoot, authorMode);
+        RewriteEntities(projectRoot, authorMode, rootNamespace);
         RewriteAppDbContextDbSets(projectRoot, authorMode);
-        RewriteDbSeeder(projectRoot, seed);
+        RewriteDbSeeder(projectRoot, seed, rootNamespace);
         ApplyShopSettingsFromSeed(projectRoot, seed, profile.ExamVariant);
         NormalizeImportViewModelConsistency(projectRoot);
         ResetSqliteDatabase(projectRoot);
-        EnsureExamCoachExcluded(projectRoot);
         return written;
     }
 
@@ -68,7 +95,7 @@ public static class ApplyAdaptedProject
         return FileExtensions.Any(ext => title.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string SanitizeGeneratedCode(string relativePath, string code, string? examVariant, string fullPath)
+    private static string SanitizeGeneratedCode(string relativePath, string code, string? examVariant, string fullPath, string rootNamespace)
     {
         if (string.IsNullOrEmpty(code))
             return code;
@@ -99,7 +126,7 @@ public static class ApplyAdaptedProject
         if (!NeedsOrderAlias(relativePath, sanitized))
             return sanitized;
 
-        const string orderAlias = "using Order = KodShopWeb.Models.Order;";
+        var orderAlias = $"using Order = {rootNamespace}.Models.Order;";
         if (sanitized.Contains(orderAlias, StringComparison.Ordinal))
             return sanitized;
 
@@ -456,21 +483,21 @@ public static class ApplyAdaptedProject
             File.WriteAllText(path, updated, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
-    private static void RewriteEntities(string projectRoot, bool authorMode)
+    private static void RewriteEntities(string projectRoot, bool authorMode, string rootNamespace)
     {
         var path = Path.Combine(projectRoot, "Models", "Entities.cs");
-        var code = EntitiesGenerator.Generate(authorMode);
+        var code = EntitiesGenerator.Generate(authorMode, rootNamespace);
         File.WriteAllText(path, code, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
     /// <summary>
     /// Полностью переписывает DbSeeder.cs по данным, извлечённым из текста ТЗ.
     /// </summary>
-    private static void RewriteDbSeeder(string projectRoot, AssignmentSeedData seed)
+    private static void RewriteDbSeeder(string projectRoot, AssignmentSeedData seed, string rootNamespace)
     {
         var path = Path.Combine(projectRoot, "Data", "DbSeeder.cs");
         var signature = SeedSignatureHelper.Compute(seed);
-        var seederCode = DbSeederGenerator.Generate(seed, signature);
+        var seederCode = DbSeederGenerator.Generate(seed, signature, rootNamespace);
         File.WriteAllText(path, seederCode, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
         var dataDir = Path.Combine(projectRoot, "Data");
@@ -625,30 +652,6 @@ public class ImportViewModel
                 // при следующем запуске без блокировки БД будет пересоздана корректно.
             }
         }
-    }
-
-    private static void EnsureExamCoachExcluded(string projectRoot)
-    {
-        var csproj = Path.Combine(projectRoot, "KodShopWeb.csproj");
-        if (!File.Exists(csproj))
-            return;
-
-        var content = File.ReadAllText(csproj);
-        if (content.Contains("ExamCoach/**"))
-            return;
-
-        const string block = """
-  <ItemGroup>
-    <Compile Remove="ExamCoach/**" />
-    <Content Remove="ExamCoach/**" />
-    <None Remove="ExamCoach/**" />
-    <EmbeddedResource Remove="ExamCoach/**" />
-  </ItemGroup>
-
-""";
-        content = content.Replace("  <ItemGroup>\r\n    <PackageReference", block + "  <ItemGroup>\r\n    <PackageReference");
-        content = content.Replace("  <ItemGroup>\n    <PackageReference", block + "  <ItemGroup>\n    <PackageReference");
-        File.WriteAllText(csproj, content, Encoding.UTF8);
     }
 
     private static string BuildProductsJs() =>

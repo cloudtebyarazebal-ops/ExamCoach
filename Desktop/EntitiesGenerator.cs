@@ -3,7 +3,7 @@ namespace ExamCoachDesktop;
 /// <summary>Полностью генерирует Models/Entities.cs под домен из ТЗ.</summary>
 public static class EntitiesGenerator
 {
-    public static string Generate(bool authorMode)
+    public static string Generate(bool authorMode, string rootNamespace = "KodShopWeb")
     {
         var makerType = authorMode ? "Author" : "Manufacturer";
         var makerLabel = authorMode ? "автора" : "производителя";
@@ -11,7 +11,7 @@ public static class EntitiesGenerator
         var makerId = makerType + "Id";
 
         return $$"""
-namespace KodShopWeb.Models;
+namespace {{rootNamespace}}.Models;
 
 /// <summary>
 /// Пользователь системы (клиент, менеджер или администратор).

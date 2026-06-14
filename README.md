@@ -1,96 +1,51 @@
-# ExamCoach — тренажёр и адаптер для демоэкзамена КОД
+# ExamCoach — тренажёр для ручного переписывания проекта на экзамене
 
-Офлайн HTML-приложение, **WPF desktop-приложение** и **CLI AdaptTest** для автоматической подгонки ASP.NET Core проекта под текст ТЗ (PDF/TXT).
+Офлайн HTML-приложение и **WPF desktop-приложение**: показывает **что создавать в Visual Studio**, **какие NuGet ставить**, код **построчно / по словам / по буквам**, и **таймеры модулей экзамена**.
 
-## Требования
+## Быстрый старт (накануне экзамена)
 
-- .NET 8 SDK
-- Windows (WPF desktop)
-- Visual Studio 2022 (опционально, для пошагового режима)
-
-## Быстрый старт
-
-### 1. Сборка desktop-приложения
+1. Сгенерируйте manifest, данные и HTML из текущего кода:
 
 ```powershell
-cd ExamCoach
-powershell -ExecutionPolicy Bypass -File .\Build-ExamCoachDesktop.ps1
-.\Start-ExamCoachDesktop.bat
+cd KodShopWeb\ExamCoach
+powershell -ExecutionPolicy Bypass -File .\Generate-ExamCoach.ps1 -UpdateManifest
 ```
 
-### 2. HTML-тренажёр (офлайн)
+2. **HTML (флешка):** откройте **`index.html`** двойным щелчком (Chrome / Edge).
+3. **Desktop (новый проект в VS — не эталон KodShopWeb):**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Generate-ExamCoach.ps1
+cd KodShopWeb\ExamCoach\Desktop
+dotnet build -c Release
+.\bin\Release\net8.0-windows\ExamCoachDesktop.exe
 ```
 
-Откройте **`index.html`** в браузере.
-
-### 3. Адаптация проекта под ТЗ (AdaptTest)
-
-**Рекомендуемая структура** (ExamCoach внутри MVC-проекта):
-
-```
-KodShopWeb/
-  ExamCoach/        ← этот репозиторий
-  apply-tz.cmd      ← в репозитории KodShopWeb
-```
-
-Сверка:
-
-```cmd
-cd KodShopWeb
-check-tz.cmd "C:\path\to\tz.txt"
-```
-
-Применить (закройте запущенное приложение):
-
-```cmd
-cd KodShopWeb
-apply-tz.cmd "C:\path\to\tz.txt"
-```
-
-Или вручную:
-
-```cmd
-cd KodShopWeb
-dotnet run --project ExamCoach\tools\AdaptTest\AdaptTest.csproj -- "C:\path\to\tz.txt" --apply
-```
-
-AdaptTest сам находит KodShopWeb (по `Controllers/`, `Models/`, `Views/`) даже если ExamCoach лежит отдельно — можно указать `--project-root="C:\path\to\KodShopWeb"`.
-
-AdaptTest:
-
-- распознаёт вариант ПУ/БУ и домен (книги, комплектующие, настольные игры, смартфоны и др.);
-- подставляет текстовые замены, сид БД, Author/Manufacturer, пороги скидок;
-- пересоздаёт `Entities.cs`, `DbSeeder.cs`, сбрасывает SQLite при смене ТЗ.
-
-### 4. Пошаговый режим в Visual Studio
-
-1. **File → New → Project → ASP.NET Core Web App (MVC)**, .NET 8.
+**Порядок:**
+1. В Visual Studio: **File → New → Project → ASP.NET Core Web App (MVC)**, .NET 8, имя любое (например `KodShopWeb`).
 2. Запустите ExamCoachDesktop → **Подключить Visual Studio** → **Из VS — найти проект**.
-3. Идите по шагам — файлы создаются в вашем проекте, код вставляется в редактор VS.
+3. Идите по шагам — файлы **создаются в новом проекте**, код **вставляется в редактор VS**.
 
-## Обновление manifest из эталонного проекта
+Эталонный репозиторий `KodShopWeb` на диске **не изменяется** — только ваш новый проект в VS.
+
+4. Скопируйте папку **`ExamCoach`** на флешку — интернет не нужен.
+
+## Автообновление manifest
+
+Список файлов больше не нужно править вручную. Скрипт **`Update-Manifest.ps1`** сканирует проект:
+
+- корень: `KodShopWeb.csproj`, `appsettings.json`, `Program.cs`
+- `Models/`, `Data/`, `Services/`, `ViewModels/`, `Controllers/`
+- `Views/**/*.cshtml`, `wwwroot/css/*.css`, `wwwroot/js/*.js`
+
+Подсказки `vsHint` из старого manifest сохраняются. Для новых файлов генерируются автоматически.
+
+Только обновить manifest без HTML:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Generate-ExamCoach.ps1 -UpdateManifest -ProjectRoot "C:\path\to\KodShopWeb"
+powershell -ExecutionPolicy Bypass -File .\Update-Manifest.ps1
 ```
 
-Скрипт **`Update-Manifest.ps1`** сканирует MVC-проект: `Models/`, `Data/`, `Services/`, `Controllers/`, `Views/`, `wwwroot/`.
-
-## Структура репозитория
-
-| Путь | Назначение |
-|------|------------|
-| `Desktop/` | WPF-приложение (парсер ТЗ, трансформации, UI) |
-| `tools/AdaptTest/` | CLI: сверка и `--apply` к целевому проекту |
-| `tools/PdfExtract/` | Утилита извлечения текста из PDF |
-| `steps-data.json` | Шаги для HTML и Desktop |
-| `assignment-transform-rules.json` | Правила текстовых замен |
-| `index.html` | Офлайн-тренажёр в браузере |
-
-## Таймеры модулей (4 часа)
+## Таймеры модулей (4 часа экзамена)
 
 | Модуль | Время | Содержание |
 |--------|-------|------------|
@@ -99,7 +54,20 @@ powershell -ExecutionPolicy Bypass -File .\Generate-ExamCoach.ps1 -UpdateManifes
 | **М3 — Товары** | 1ч 30 | ProductService + Edit view + products.js |
 | **М4 — Заказы** | 1ч | Orders (вариант ПУ) |
 
-## NuGet целевого MVC-проекта (8.x)
+В HTML и Desktop: **▶ Старт**, **⏸ Пауза**, **↺** сброс. Прогресс таймеров сохраняется локально.
+
+## Как пользоваться
+
+| Кнопка / клавиша | Действие |
+|------------------|----------|
+| **Построчно** | Рекомендуется — одна строка за раз |
+| **По словам / буквам** | Для запоминания |
+| **F8** / **→** | Следующая строка или слово |
+| **+10 строк** | Быстро показать блок |
+| **✓ Готово** | Отмечает шаг |
+| **Поверх всех окон** | Desktop — держать рядом с Visual Studio |
+
+## NuGet (версия 8.x)
 
 ```
 Microsoft.EntityFrameworkCore.Sqlite 8.0.11
@@ -107,10 +75,16 @@ Microsoft.EntityFrameworkCore.Design 8.0.11
 ClosedXML 0.105.0
 ```
 
-## Сборка solution
+## Файлы
 
-```cmd
-dotnet build ExamCoach.sln
-```
+| Файл | Назначение |
+|------|------------|
+| `steps-manifest.json` | Сценарий шагов (авто-скан + setup) |
+| `coach-config.json` | Setup-шаги и описание модулей (русский текст) |
+| `steps-data.json` | JSON для HTML и Desktop |
+| `index.html` | Офлайн-тренажёр в браузере |
+| `Desktop/` | WPF-приложение поверх VS |
+| `Generate-ExamCoach.ps1` | Сборка HTML + JSON |
+| `Update-Manifest.ps1` | Авто-скан файлов проекта |
 
-Не переписывайте всё по буквам — используйте **«Построчно»** и **✓ Готово** как чеклист.
+Не пытайтесь переписать всё по буквам — используйте **«Построчно»** и **✓ Готово** как чеклист.

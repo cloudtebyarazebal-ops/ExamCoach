@@ -22,6 +22,7 @@ internal static class Program
 
         var tzPath = args.FirstOrDefault(a => !a.StartsWith('-') && !a.Contains('=')) ?? DefaultPdf;
         var apply = args.Contains("--apply", StringComparer.OrdinalIgnoreCase);
+        var init = args.Contains("--init", StringComparer.OrdinalIgnoreCase);
         var coachRoot = ResolveCoachRoot(args);
         var projectRoot = ResolveProjectRoot(args, coachRoot);
 
@@ -33,17 +34,17 @@ internal static class Program
                 return 1;
             }
 
-            if (!IsMvcProject(projectRoot))
+            if (!ProjectTargetHelper.IsWebProject(projectRoot) && !init)
             {
-                Console.Error.WriteLine("MVC-проект не найден: " + projectRoot);
-                Console.Error.WriteLine("Укажите --project-root=\"C:\\path\\to\\KodShopWeb\" или запускайте из папки проекта.");
+                Console.Error.WriteLine("Web-проект не найден: " + projectRoot);
+                Console.Error.WriteLine("Создайте MVC-проект (dotnet new mvc) или добавьте флаг --init.");
                 return 1;
             }
 
             Console.WriteLine($"ТЗ: {tzPath}");
             Console.WriteLine($"Проект: {projectRoot}");
             Console.WriteLine($"ExamCoach: {coachRoot}");
-            var count = ApplyAdaptedProject.Apply(tzPath, projectRoot, coachRoot);
+            var count = ApplyAdaptedProject.Apply(tzPath, projectRoot, coachRoot, init);
             Console.WriteLine($"Записано файлов: {count}");
             return 0;
         }
@@ -75,10 +76,10 @@ internal static class Program
             return fromCwd;
 
         var sibling = Path.GetFullPath(Path.Combine(coachRoot, ".."));
-        if (IsMvcProject(sibling))
+        if (ProjectTargetHelper.IsWebProject(sibling))
             return sibling;
 
-        if (IsMvcProject(DefaultProjectRoot))
+        if (ProjectTargetHelper.IsWebProject(DefaultProjectRoot))
             return DefaultProjectRoot;
 
         return DefaultProjectRoot;
@@ -111,21 +112,13 @@ internal static class Program
         var dir = start;
         while (!string.IsNullOrEmpty(dir))
         {
-            if (IsMvcProject(dir))
+            if (ProjectTargetHelper.IsWebProject(dir))
                 return dir;
             dir = Path.GetDirectoryName(dir)!;
         }
 
         return null;
     }
-
-    private static bool IsMvcProject(string path) =>
-        Directory.Exists(Path.Combine(path, "Controllers")) &&
-        Directory.Exists(Path.Combine(path, "Models")) &&
-        Directory.Exists(Path.Combine(path, "Views")) &&
-        Directory.EnumerateFiles(path, "*.csproj").Any(p =>
-            !p.Contains("ExamCoach", StringComparison.OrdinalIgnoreCase) &&
-            !p.Contains("AdaptTest", StringComparison.OrdinalIgnoreCase));
 
     private static int RunSurgeryTests(string coachRoot)
     {
